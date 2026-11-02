@@ -10,9 +10,15 @@ Built with Python and Streamlit.
 
 ## Features
 
-- **Annual report PDFs (Ind-AS)**: reads only the consolidated Statement of Profit and Loss and
-  Cash Flow Statement, handles Indian number formats (`10,75,675`) and bracketed negatives, and checks
-  that totals reconcile. Compares this year with last year.
+- **Financial statement PDFs**: reads only the profit & loss and cash flow statements (consolidated first) from
+  - Indian annual reports (Ind-AS), e.g. Reliance Industries
+  - Indian quarterly / annual results filings (4–6 columns), e.g. Ola Electric, Tata Motors
+  - investor-presentation P&L slides with quarter columns (`Q1 FY26 … Q1 FY27`)
+  - US 10-K / 10-Q filings and annual reports, e.g. Tesla, Berkshire Hathaway
+
+  Handles Indian number formats (`10,75,675`), bracketed negatives, and scanned PDFs with OCR slips
+  (`4B`, `(4281`, `69,60 5`). Compares with the same period last year and checks that totals reconcile.
+  Text is read with pdfium (a 150-page annual report takes about 3 seconds), with pypdf as a fallback.
 - **Budget vs actual**: upload a CSV or Excel file with *Line Item*, *Budget* (or *Last Year*) and *Actual* columns.
 - **Health score and verdict**: Healthy / Watch / At risk, with reasons in everyday language.
 - **Charts**: sales-to-profit waterfall, where every 100 of sales went, and actual vs budget/last year.
@@ -26,11 +32,11 @@ Built with Python and Streamlit.
 | `app.py` | The Streamlit dashboard |
 | `ui.py` | Design system: theme, cards, header and other UI components |
 | `fpa_engine.py` | Analysis engine: variances, alerts, health score, CFO commentary and plain-English insights |
-| `ind_as_extractor.py` | Reads the financial statements from Indian (Ind-AS) annual report PDFs |
+| `ind_as_extractor.py` | Reads the financial statements from annual reports, results filings and 10-Ks |
 | `report.py` | Builds the downloadable board report |
 | `.streamlit/config.toml` | Theme and app settings |
 | `test_fpa_engine.py`, `test_ind_as_extractor.py` | Unit tests for the analysis engine and the PDF statement parser (pytest) |
-| `test_app.py` | Smoke test that renders the dashboard with the sample data |
+| `test_app.py` | Dashboard tests: renders with the sample data, what-if sliders, board report |
 | `Dockerfile` | Container image for running the dashboard anywhere |
 | `.github/workflows/ci.yml` | Runs linting, the tests and a Docker build on every push |
 
@@ -60,12 +66,13 @@ docker run -p 8501:8501 nexus-fpa
 python -m pytest -q
 ```
 
-The tests that read a real annual report run only when `RIL-Integrated-Annual-Report-2025-26.pdf`
-(Reliance Industries' FY2025-26 Integrated Annual Report, from ril.com) is in the project folder;
-otherwise they're skipped. PDFs are excluded from the repository by `.gitignore`.
+The tests that read real filings run only when the PDFs are present: `RIL-Integrated-Annual-Report-2025-26.pdf`
+in the project folder, and the Tesla 10-K, Berkshire Hathaway annual report, Tata Motors and Ola Electric results in `test_pdfs/`
+(all public, from the companies' investor pages); otherwise they're skipped. PDFs are excluded from the repository by `.gitignore`.
 
 ## Notes
 
-- "Operating profit" is revenue minus cost of goods and running costs, **before depreciation**
-  (close to EBITDA). For annual reports, the *Data & glossary* tab also shows EBITDA and EBIT.
+- "Operating profit" is revenue minus cost of goods and running costs. For Indian filings it's **before
+  depreciation** (close to EBITDA); US filings already include depreciation in costs, so it's EBIT.
+- Quarterly filings don't contain a quarter's cash flow, so cash figures are only shown for annual statements.
 - Analysis is automated. Review the results before using them externally.

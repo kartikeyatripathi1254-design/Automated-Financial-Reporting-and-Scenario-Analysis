@@ -40,12 +40,13 @@ GLOSSARY = {
     "Cost of goods (COGS)": "What it cost to make or buy the things that were sold: materials, stock, production.",
     "Running costs (OpEx)": "Everyday costs of running the business: salaries, rent, marketing, utilities.",
     "Gross margin": "Out of every 100 in sales, how much is left after paying for the goods sold. Higher is better.",
-    "Operating profit": "What's left after paying for goods and running costs, before interest, depreciation and tax.",
+    "Operating profit": "What's left after paying for goods and running costs, before interest and tax "
+                        "(and, for Indian filings, before depreciation).",
     "Net cash flow": "Cash that came in minus cash that went out during the period.",
     "Cash runway": "If cash keeps going out at this pace, how many months the cash in the bank would last.",
     "Health score": "A 0–100 summary: starts at 100 and drops for each warning, serious alert, loss or decline.",
     "Budget vs actual": "Comparing what the business planned to earn and spend with what really happened.",
-    "Year over year": "Comparing this year with last year.",
+    "Year over year": "Comparing this year (or quarter) with the same period last year.",
 }
 
 
@@ -110,10 +111,10 @@ def load_pdf(file_bytes: bytes) -> dict:
 
 def landing_page():
     ui.hero("Welcome to Nexus FP&A", "Upload your financials and get a clear, plain-English health check in seconds.",
-            ["Annual report PDFs", "Budget vs actual", "What-if scenarios", "Board-ready report"])
+            ["Annual & quarterly results PDFs", "Budget vs actual", "What-if scenarios", "Board-ready report"])
     c1, c2, c3 = st.columns(3)
     with c1:
-        ui.feature("📤", "1. Upload", "Drop a company annual report (PDF) or your own budget-vs-actual table "
+        ui.feature("📤", "1. Upload", "Drop a company's annual report, quarterly results or 10-K (PDF), or your own budget-vs-actual table "
                                      "(CSV or Excel) in the sidebar.")
     with c2:
         ui.feature("🔎", "2. Understand", "See a health score, the key numbers, and what went well or badly — "
@@ -137,7 +138,8 @@ def load_payload():
 
     uploaded = st.sidebar.file_uploader(
         "Upload a file", type=["pdf", "csv", "xlsx", "xls", "json"], label_visibility="collapsed",
-        help="**PDF**: a company's annual report (we read the official financial statements).\n\n"
+        help="**PDF**: an annual report, quarterly results filing, investor presentation or US 10-K / 10-Q "
+             "(we read the official profit & loss and cash flow statements).\n\n"
              "**CSV / Excel**: a table with Line Item, Budget (or Last Year) and Actual columns.",
     )
     st.sidebar.download_button("Download CSV template", TEMPLATE_CSV, "nexus_fpa_template.csv", "text/csv")
@@ -151,8 +153,10 @@ def load_payload():
             with st.spinner("Reading the financial statements in your PDF… large reports take ~20 seconds."):
                 payload = load_pdf(uploaded.getvalue())
             src = payload["source"]
-            st.sidebar.success(f"Read the {src['scope'].lower()} statements "
-                               f"(pages {src['profit_and_loss_page']} & {src['cash_flow_page']}).")
+            pages = f"page {src['profit_and_loss_page']}"
+            if src.get("cash_flow_page"):
+                pages = f"pages {src['profit_and_loss_page']} & {src['cash_flow_page']}"
+            st.sidebar.success(f"Read the {src['scope'].lower()} statements ({pages}): {payload['period']}.")
             return payload
         if ext == "json":
             return json.load(uploaded)
@@ -167,7 +171,8 @@ def load_payload():
         return payload
     except ExtractionError as e:
         st.error(f"We couldn't find the financial statements in this PDF.\n\n{e}\n\n"
-                 "Make sure it's a company's annual report that includes a Statement of Profit and Loss.")
+                 "Make sure the PDF contains the company's profit and loss statement (annual report, quarterly results "
+                 "filing or 10-K). Press releases and slide decks without a P&L table can't be read.")
         st.stop()
     except Exception as e:  # noqa: BLE001 - show any parsing problem to the user instead of crashing
         st.error(f"We couldn't read this file: {e}")
@@ -237,7 +242,9 @@ def kpi_row(result):
     cards.append(ui.kpi_html("🏭", "Operating profit", format_compact(oi["actual"], cur),
                              f"{format_compact(oi['variance_abs'], cur, True)} {n['vs']}",
                              "good" if oi["variance_abs"] >= 0 else "bad",
-                             (f"{om:.1f}% of sales" if om is not None else "") + (" · before depreciation" if annual else ""),
+                             (f"{om:.1f}% of sales" if om is not None else "") + (
+                                 (" · after depreciation" if result["metadata"].get("operating_income_basis") == "ebit"
+                                  else " · before depreciation") if annual else ""),
                              ui_help("Operating profit")))
 
     cash = k["net_cash_flow"]
@@ -479,10 +486,18 @@ def data_tab(result, payload):
                     st.success("The extracted figures add up: totals and cash balances reconcile.")
                 elif checks:
                     st.warning(f"Some totals don't add up: {checks}. Double-check against the PDF.")
+                if src.get("cash_flow_page") is None and result["metadata"].get("period_months") == 3:
+                    st.markdown("- Quarterly filings don't include a quarter's cash flow, so cash figures are not shown.")
                 cur = result["metadata"]["currency"]
-                ebitda = result["summary_kpis"]["operating_income"]["actual"] + src["other_income"]["actual"]
-                st.markdown(f"- EBITDA incl. other income: **{format_money(ebitda, cur)}**")
-                st.markdown(f"- EBIT (after depreciation): **{format_money(ebitda - src['depreciation']['actual'], cur)}**")
+                operating = result["summary_kpis"]["operating_income"]["actual"]
+                if src.get("operating_income_basis") == "ebit":
+                    st.markdown("- This filing's costs already include depreciation, so **operating profit here is "
+                                "after depreciation** (EBIT).")
+                    st.markdown(f"- Operating profit (EBIT): **{format_money(operating, cur)}**")
+                else:
+                    ebitda = operating + src["other_income"]["actual"]
+                    st.markdown(f"- EBITDA incl. other income: **{format_money(ebitda, cur)}**")
+                    st.markdown(f"- EBIT (after depreciation): **{format_money(ebitda - src['depreciation']['actual'], cur)}**")
             elif "file_columns" in src:
                 cols = src["file_columns"]
                 st.markdown(f"Read **{cols['item']}** (item), **{cols['baseline']}** (comparison) and "
