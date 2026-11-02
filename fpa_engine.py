@@ -69,7 +69,11 @@ def format_compact(value: float, currency: str, signed: bool = False) -> str:
         if rupees >= 1e5:
             return f"{sign}{symbol}{rupees / 1e5:,.2f} lakh"
         return f"{sign}{symbol}{_indian_grouping(round(rupees))}"
-    for limit, suffix in ((1e9, "B"), (1e6, "M"), (1e3, "K")):
+    # Amounts reported "in millions" etc.: scale to the full amount, then shorten ($94,827 Mn -> $94.8B).
+    scale = {"k": 1e3, "th": 1e3, "mn": 1e6, "m": 1e6, "bn": 1e9, "b": 1e9}.get(unit.lower())
+    if scale:
+        v, unit = v * scale, ""
+    for limit, suffix in ((1e12, "T"), (1e9, "B"), (1e6, "M"), (1e3, "K")):
         if v >= limit:
             scaled = v / limit
             digits = 0 if scaled >= 100 else 1 if scaled >= 10 else 2  # €80K, €45.5K, €1.38M
@@ -318,6 +322,9 @@ class FPAAnalysisEngine:
                 "report_type": str(report_type),
                 "analysis_mode": analysis_mode,
                 "baseline": str(baseline),
+                "period_months": period_months,
+                # "ebitda": costs exclude depreciation (Indian filings); "ebit": already deducted (US filings).
+                "operating_income_basis": (payload.get("source") or {}).get("operating_income_basis", "ebitda"),
                 "overrun_threshold_pct": float(self.overrun_threshold_pct),
                 "critical_threshold_pct": float(self.critical_threshold_pct),
                 "kpi_sources": {
